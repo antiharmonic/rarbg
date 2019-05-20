@@ -45,6 +45,7 @@ app = web.Application()
 app.token = None
 app.token_got = datetime.now()
 app.counter = 0
+app.lock = asyncio.Lock()
 app.next_call = 0
 
 
@@ -76,9 +77,10 @@ async def api(params):
     query_text = pretty(params)
     click.secho('[{}] {}'.format(request_id, query_text), fg='cyan')
 
-    await refresh_token()
-    params.update(token=app.token, format='json_extended', app_id=APP_ID)
-    data = await fetch_json(API_ENDPOINT, params=params)
+    async with app.lock:
+        await refresh_token()
+        params.update(token=app.token, format='json_extended', app_id=APP_ID)
+        data = await fetch_json(API_ENDPOINT, params=params)
 
     error, results = data.get('error'), data.get('torrent_results')
 
