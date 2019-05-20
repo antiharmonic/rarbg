@@ -4,6 +4,7 @@
 import asyncio
 
 from datetime import datetime, timedelta
+from time import time
 from email.utils import formatdate
 from urllib.parse import parse_qs
 
@@ -44,7 +45,7 @@ app = web.Application()
 app.token = None
 app.token_got = datetime.now()
 app.counter = 0
-app.lock = asyncio.Lock()
+app.next_call = 0
 
 
 def pretty(data: dict):
@@ -52,7 +53,11 @@ def pretty(data: dict):
 
 
 async def fetch_json(*args, **kwds):
+    await asyncio.sleep(max(app.next_call - time(), 0))
     resp = await app.s.get(*args, **kwds)
+    app.next_call = time() + API_RATE_LIMIT
+    if resp.status != 200:
+        return {'error': 'Bad response'}
     return await resp.json()
 
 
@@ -71,11 +76,9 @@ async def api(params):
     query_text = pretty(params)
     click.secho('[{}] {}'.format(request_id, query_text), fg='cyan')
 
-    async with app.lock:
-        await refresh_token()
-        params.update(token=app.token, format='json_extended', app_id=APP_ID)
-        data = await fetch_json(API_ENDPOINT, params=params)
-        await asyncio.sleep(API_RATE_LIMIT)
+    await refresh_token()
+    params.update(token=app.token, format='json_extended', app_id=APP_ID)
+    data = await fetch_json(API_ENDPOINT, params=params)
 
     error, results = data.get('error'), data.get('torrent_results')
 
